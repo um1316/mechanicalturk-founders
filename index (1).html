@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>MTurk Survey Bridge</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        max-width: 700px;
+        margin: 0 auto;
+        padding: 2rem;
+        line-height: 1.5;
+      }
+      h2 {
+        margin-top: 0;
+      }
+      #formLink {
+        display: inline-block;
+        margin: 1rem 0;
+        padding: 0.5rem 1rem;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+      }
+      #verifyButton,
+      #completeButton {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        margin: 1rem 0;
+        background-color: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #completeContainer {
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Survey task</h2>
+    <p id="status">Loading…</p>
+    <!-- Link to open the Google Form with pre‑filled fields -->
+    <a id="formLink" target="_blank">Open survey</a>
+    <!-- Button for the worker to declare they have finished the survey -->
+    <button id="verifyButton" style="display:none;">I completed the survey</button>
+    <!-- Container for the MTurk submission form. Hidden until the response is verified -->
+    <div id="completeContainer" style="display:none;">
+      <form id="mturkForm" method="POST">
+        <!-- assignmentId is the only field Amazon requires on submission -->
+        <input type="hidden" name="assignmentId" id="assignmentId" />
+        <button id="completeButton" type="submit">Submit to MTurk</button>
+      </form>
+    </div>
+    <script>
+      (function() {
+        const params = new URLSearchParams(window.location.search);
+        const assignmentId = params.get('assignmentId');
+        const workerId = params.get('workerId');
+        const hitId = params.get('hitId');
+        const turkSubmitTo = params.get('turkSubmitTo') || 'https://www.mturk.com';
+
+        const status = document.getElementById('status');
+        const formLink = document.getElementById('formLink');
+        const verifyButton = document.getElementById('verifyButton');
+        const completeContainer = document.getElementById('completeContainer');
+        const mturkForm = document.getElementById('mturkForm');
+        const assignmentInput = document.getElementById('assignmentId');
+
+        // ======== CONFIGURATION ========
+        // Replace these with your real Google Form URL and the entry IDs of the fields
+        const GOOGLE_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSf2o78CeyV2mH49kByNErmHBU5Tk3z3JfMtyLebRfC6NlVTvQ/viewform?usp=publish-editor';
+        const ENTRY_WORKER_ID = 'entry.2125845625';
+        const ENTRY_ASSIGNMENT_ID = 'entry.376127504';
+        const ENTRY_HIT_ID = 'entry.614012763';
+        // The URL of your Apps Script web app that checks if assignmentId is present in the response sheet
+        const VALIDATOR_URL = 'https://script.google.com/macros/s/AKfycbzUmwVgwOoM4ulcQiVl14DoL0j4ca7hJFTzXMDfW326xhMRr6ZrHRIM6Gr7lm0Bqx4/exec';
+        // ====== END CONFIGURATION ======
+
+        // If the worker hasn't accepted the HIT, disable all interactive elements
+        if (!assignmentId || assignmentId === 'ASSIGNMENT_ID_NOT_AVAILABLE') {
+          status.innerText = 'Please accept this HIT before starting the survey.';
+          formLink.style.display = 'none';
+          return;
+        }
+
+        // Provide instructions to the worker
+        status.innerText = '1. Open and complete the survey. 2. Return to this page, click "I completed the survey" to verify your response, then submit your HIT.';
+
+        // Construct the pre‑filled URL for your Google Form
+        const prefilledUrl = `${GOOGLE_FORM_URL}?usp=pp_url&${ENTRY_WORKER_ID}=${encodeURIComponent(workerId)}&${ENTRY_ASSIGNMENT_ID}=${encodeURIComponent(assignmentId)}&${ENTRY_HIT_ID}=${encodeURIComponent(hitId)}`;
+        formLink.href = prefilledUrl;
+
+        // Set up the MTurk form submission
+        mturkForm.action = `${turkSubmitTo}/mturk/externalSubmit`;
+        assignmentInput.value = assignmentId;
+
+        // Show the verify button
+        verifyButton.style.display = 'inline-block';
+
+        // When the worker clicks the verify button, query your validator script
+        verifyButton.addEventListener('click', async function() {
+          status.innerText = 'Checking your survey response...';
+          verifyButton.disabled = true;
+          try {
+            // Call the Apps Script web app with the assignmentId. It should return JSON like { submitted: true/false }
+            const response = await fetch(`${VALIDATOR_URL}?assignmentId=${encodeURIComponent(assignmentId)}`);
+            if (!response.ok) throw new Error('Network response was not ok');
+            const data = await response.json();
+            if (data.submitted) {
+              status.innerText = 'Thank you! We found your survey response. You may now submit your HIT.';
+              verifyButton.style.display = 'none';
+              completeContainer.style.display = 'block';
+            } else {
+              status.innerText = 'We could not find your survey response yet. Please ensure you have submitted the survey and wait a moment before trying again.';
+              verifyButton.disabled = false;
+            }
+          } catch (error) {
+            console.error(error);
+            status.innerText = 'An error occurred while verifying your response. Please try again later.';
+            verifyButton.disabled = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
